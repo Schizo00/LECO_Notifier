@@ -6,7 +6,7 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  check:
+  check-leco-outages:
     runs-on: ubuntu-latest
     permissions:
       contents: write
