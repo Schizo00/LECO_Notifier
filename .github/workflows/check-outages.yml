@@ -23,25 +23,14 @@ jobs:
       - name: Install dependencies
         run: poetry install
 
-      - name: Run notifier (retry on failure)
+      - name: Run notifier
         env:
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           FROM_EMAIL: ${{ secrets.FROM_EMAIL }}
-        run: |
-          for attempt in 1 2 3; do
-            poetry run leco-check && exit 0
-            status=$?
-            echo "Attempt $attempt failed (exit $status)."
-            if [ "$attempt" -lt 3 ]; then
-              echo "Retrying in 5 minutes..."
-              sleep 300
-            fi
-          done
-          echo "All 3 attempts failed."
-          exit 1
+        run: poetry run leco-check
 
       - name: Commit updated state
         run: |
