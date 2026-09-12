@@ -21,6 +21,12 @@ STAGE_LABELS = {
 # Order in which stages should be considered/displayed.
 STAGE_ORDER = [STAGE_IMMEDIATE, STAGE_7_DAY, STAGE_1_DAY]
 
+# When more than one stage is due for the same outage in the same run (e.g. a
+# missed run let both the 7-day and 1-day windows go by before the next
+# successful scrape), only the most urgent/informative one should actually be
+# emailed — the rest are still real, just superseded. Earlier entries win.
+DISPLAY_PRIORITY = [STAGE_IMMEDIATE, STAGE_1_DAY, STAGE_7_DAY]
+
 
 def local_now() -> datetime:
     """Current time in Sri Lanka local time.
@@ -38,12 +44,26 @@ def local_now() -> datetime:
 def eligible_stages(outage, today: date) -> list:
     """Which reminder stages are due for this outage as of `today` (a local
     date). `immediate` is always a candidate — dedup against already-sent
-    state is what makes it fire only once, the first time an outage is seen."""
+    state is what makes it fire only once, the first time an outage is seen.
+
+    The 7-day and 1-day stages use windows rather than an exact-day match:
+    the scraper runs every 6 hours and can miss a day entirely (site down,
+    network error, a run that fails outright) — with an exact-day check,
+    missing the one day a stage was due means it never fires again, since
+    `days_until` only counts down. With a window, whichever run first lands
+    inside it fires the stage once (dedup, as always, prevents a repeat); a
+    run more than a day or two late just means a shorter notice period, not
+    a silently lost reminder.
+
+    The two windows don't overlap — 1-day is [0, 1], 7-day is [2, 7] — so
+    they never compete with each other for the same outage; the only stage
+    that can still coincide with a reminder is `immediate`, when an outage is
+    first discovered already inside one of these windows."""
     stages = [STAGE_IMMEDIATE]
     if outage.date_from:
         days_until = (outage.date_from.date() - today).days
-        if days_until == 7:
-            stages.append(STAGE_7_DAY)
-        if days_until == 1:
+        if 0 <= days_until <= 1:
             stages.append(STAGE_1_DAY)
+        elif 2 <= days_until <= 7:
+            stages.append(STAGE_7_DAY)
     return stages

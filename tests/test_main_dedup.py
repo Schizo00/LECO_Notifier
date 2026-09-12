@@ -64,7 +64,7 @@ def test_immediate_and_coinciding_reminder_collapse_into_one_stage(tmp_path, mon
         streets_raw="Kandewatta Rd and by roads",
     )
 
-    monkeypatch.setattr(main_module, "fetch_all_areas", lambda: [])
+    monkeypatch.setattr(main_module, "fetch_all_areas", lambda: [(1, "<html></html>")])
     monkeypatch.setattr(main_module, "parse_all_areas", lambda pages: [outage])
     monkeypatch.setattr(main_module, "local_now", lambda: fixed_now)
 
@@ -85,6 +85,71 @@ def test_immediate_and_coinciding_reminder_collapse_into_one_stage(tmp_path, mon
     state = json.loads(state_path.read_text())
     assert f"{outage.id}:a@example.com:immediate" in state["sent"]
     assert f"{outage.id}:a@example.com:1_day_reminder" in state["sent"]  # fulfilled, not re-fireable
+
+
+def test_missed_run_skips_7day_stage_entirely_not_stale(tmp_path, monkeypatch):
+    """Simulates a missed run: `immediate` was already sent (e.g. weeks ago,
+    when the outage was 20 days out), then the scraper fails for several
+    days straight and the next successful run lands exactly 1 day out — the
+    7-day window (2-7 days out) was skipped over entirely. It should never
+    fire at all (no stale "7 days away" message once it's actually tomorrow),
+    and no state entry should exist for a stage that was never eligible."""
+    subscribers_path, state_path = _setup_tmp_store(tmp_path, monkeypatch)
+
+    outage_id = "fixed-outage-id"
+    state_path.write_text(json.dumps({"sent": [f"{outage_id}:a@example.com:immediate"]}))
+
+    fixed_now = datetime(2026, 9, 10, 8, 0, 0, tzinfo=LOCAL_TZ)
+    outage = SimpleNamespace(
+        id=outage_id,
+        branch="Galle",
+        town="GALLE",
+        source="LECO",
+        section="Current Month",
+        date_from=datetime(2026, 9, 11, 12, 0, 0),  # 1 day after fixed_now
+        date_to=datetime(2026, 9, 11, 16, 0, 0),
+        date_from_raw="2026-09-11 12:00 PM",
+        date_to_raw="2026-09-11 04:00 PM",
+        streets=["Kandewatta Rd"],
+        streets_raw="Kandewatta Rd and by roads",
+    )
+
+    monkeypatch.setattr(main_module, "fetch_all_areas", lambda: [(1, "<html></html>")])
+    monkeypatch.setattr(main_module, "parse_all_areas", lambda pages: [outage])
+    monkeypatch.setattr(main_module, "local_now", lambda: fixed_now)
+
+    sent_calls = []
+    monkeypatch.setattr(
+        main_module, "send_email", lambda to, subject, body: sent_calls.append((to, subject, body))
+    )
+
+    main_module.main()
+
+    assert len(sent_calls) == 1
+    _, _, body = sent_calls[0]
+    assert "tomorrow" in body.lower()  # the 1-day wording, not the stale 7-day one
+    assert "7 days away" not in body
+
+    state = json.loads(state_path.read_text())
+    assert f"{outage_id}:a@example.com:1_day_reminder" in state["sent"]
+    assert f"{outage_id}:a@example.com:7_day_reminder" not in state["sent"]  # never eligible
+
+
+def test_total_scrape_failure_aborts_without_sending(tmp_path, monkeypatch):
+    """If every area fetch fails (site down, network outage), fetch_all_areas
+    returns an empty list. That must not be treated as "0 outages today" —
+    it should abort loudly rather than silently proceeding with no data,
+    which would look identical to a legitimately quiet day."""
+    _setup_tmp_store(tmp_path, monkeypatch)
+    monkeypatch.setattr(main_module, "fetch_all_areas", lambda: [])
+
+    parse_called = []
+    monkeypatch.setattr(main_module, "parse_all_areas", lambda pages: parse_called.append(True))
+
+    result = main_module.main()
+
+    assert result != 0
+    assert parse_called == []
 
 
 def test_no_subscribers_does_not_fetch(tmp_path, monkeypatch):

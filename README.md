@@ -16,17 +16,43 @@ once, tracked independently:
 
 1. **Now** — the first time the notice is seen (could be the day it's
    published, whether that's weeks or hours ahead).
-2. **7 days before** the interruption date.
-3. **The day before** the interruption date.
+2. **7 days before** the interruption date (fires anywhere in a 2–7 day
+   window, not only on exactly day 7 — see below).
+3. **The day before** the interruption date (fires anywhere in a 0–1 day
+   window).
 
-"Day before" and "7 days before" are computed against the current date in
-Sri Lanka local time (Asia/Colombo), not the scheduler's clock, so the
-6-hourly GitHub Actions runner (UTC) can't shift which calendar day a
-reminder lands on. If a notice is first published fewer than 7 (or 1) days
-out, that stage's window has already passed and only the remaining stages
-fire — no reminder is invented after the fact. A stage is never repeated
-once its state entry is recorded, so re-running the workflow the same day
-doesn't duplicate a stage that already went out.
+Both are computed against the current date in Sri Lanka local time
+(Asia/Colombo), not the scheduler's clock, so the scheduled GitHub Actions
+runner (UTC) can't shift which calendar day a reminder lands on.
+
+**Why windows, not exact days:** the scraper can fail on any given run —
+LECO's site being down, a network error, the workflow itself failing. If the
+7-day and 1-day stages fired only on the exact matching day, a single missed
+run on that specific day would mean that reminder never fires again, since
+the day-count only counts down from there. Using a window instead means
+whichever run first lands inside it fires the stage once (state-based dedup,
+as always, is what prevents a repeat) — a late run just means a shorter
+notice period, not a silently lost reminder. The 7-day and 1-day windows
+don't overlap each other, so if a run is missed for the entire 7-day window
+(days 7 down through 2), that reminder is simply skipped rather than firing
+late with stale "7 days away" wording once it's actually tomorrow. The only
+stage that can still coincide with a reminder is `immediate`, when an
+outage is first discovered already inside one of these windows — in that
+case only `immediate` is emailed (a "reminder" implies a prior notice
+existed, which contradicts "immediate" meaning first contact), and the
+coinciding reminder is marked fulfilled so it doesn't fire separately later.
+
+If every branch's scrape fails in the same run (e.g. leco.lk is entirely
+unreachable), the run aborts loudly (non-zero exit, visible as a failed
+GitHub Actions run) instead of silently treating "fetched nothing" the same
+as "genuinely no outages today" — the latter would otherwise hide the
+difference between "nothing scheduled" and "the scraper is broken."
+
+If an outage is later removed from LECO's site — cancelled, or the notice
+retracted — no further reminders are sent for it, since matching only
+considers outages that are actually present in the current scrape. This is
+intentional: reminding someone about a cancelled outage would be worse than
+saying nothing.
 
 ## How it works
 
