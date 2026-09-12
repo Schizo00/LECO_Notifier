@@ -60,19 +60,37 @@ doesn't duplicate a stage that already went out.
 2. Add subscribers (repeatable):
 
    ```
-   poetry run leco-add-subscriber someone@example.com "Kandewatta Rd" "Wackwella Rd"
+   poetry run leco-add-subscriber someone@example.com Galle "Kandewatta Rd" "Wackwella Rd"
    ```
 
    This updates `data/subscribers.json`. You can also edit that file by
-   hand — it's a plain JSON list of `{"email": ..., "streets": [...]}`.
-   Street names only need to be a substring of what LECO publishes (e.g.
-   "Kandewatta" matches "Kandewatta Rd(portion)").
+   hand — it's a plain JSON list of
+   `{"email": ..., "branch": ..., "streets": [...]}`. Street names only need
+   to be a substring of what LECO publishes (e.g. "Kandewatta" matches
+   "Kandewatta Rd(portion)").
+
+   The branch is required and must be one of `Galle`, `Kaluthara`,
+   `Kelaniya`, `Kotte`, `Moratuwa`, `Negombo`, `Nugegoda` — street names are
+   not unique across LECO's branch regions, so matching is scoped to one
+   branch per subscription. To watch streets in more than one branch, run
+   the command again with the same email and a different branch; it adds a
+   second entry rather than merging across branches. If you don't know a
+   street's branch, check which map region it falls under at
+   https://www.leco.lk/powerIntrup_e.php.
 
 3. Configure SMTP credentials. Copy `.env.example` to `.env` for local runs,
    or set the same variables as GitHub Actions repository secrets
    (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `FROM_EMAIL`) for the
-   scheduled workflow. A Gmail account with an
-   [app password](https://myaccount.google.com/apppasswords) works well.
+   scheduled workflow. Any standard SMTP+STARTTLS provider works:
+
+   - **Gmail**: `smtp.gmail.com:587`, with an
+     [app password](https://myaccount.google.com/apppasswords) (requires
+     2-Step Verification turned on first).
+   - **Outlook/Hotmail**: `smtp-mail.outlook.com:587`, with an app password
+     from [account.microsoft.com](https://account.microsoft.com/security) →
+     Advanced security options (also requires 2-step verification turned on
+     first — if "App passwords" doesn't appear there, Microsoft has disabled
+     basic SMTP auth for that account and Gmail is the more reliable option).
 
 4. Run a check manually:
 
@@ -109,11 +127,11 @@ dedup logic works end to end. These run automatically on every push via
 To confirm SMTP actually delivers, without waiting for a real outage to
 land exactly 7 or 1 days out:
 
-1. Find a street currently listed on https://www.leco.lk/powerIntrup_e.php
-   and its interruption date.
+1. Find a street currently listed on https://www.leco.lk/powerIntrup_e.php,
+   its branch, and its interruption date.
 2. Add yourself as a subscriber for that street:
    ```
-   poetry run leco-add-subscriber you@example.com "That Street Name"
+   poetry run leco-add-subscriber you@example.com Galle "That Street Name"
    ```
 3. Run once normally — this sends the "immediate" stage:
    ```
