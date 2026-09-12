@@ -91,9 +91,9 @@ saying nothing.
 
    This updates `data/subscribers.json`. You can also edit that file by
    hand — it's a plain JSON list of
-   `{"email": ..., "branch": ..., "streets": [...]}`. Street names only need
-   to be a substring of what LECO publishes (e.g. "Kandewatta" matches
-   "Kandewatta Rd(portion)").
+   `{"email": ..., "branch": ..., "region": ..., "streets": [...]}`
+   (`region` is optional). Street names only need to be a substring of what
+   LECO publishes (e.g. "Kandewatta" matches "Kandewatta Rd(portion)").
 
    The branch is required and must be one of `Galle`, `Kaluthara`,
    `Kelaniya`, `Kotte`, `Moratuwa`, `Negombo`, `Nugegoda` — street names are
@@ -103,6 +103,24 @@ saying nothing.
    second entry rather than merging across branches. If you don't know a
    street's branch, check which map region it falls under at
    https://www.leco.lk/powerIntrup_e.php.
+
+   Each branch itself covers several towns (e.g. Galle branch covers GALLE,
+   AMBALANGODA, HIKKADUWA), and street names can repeat across those too —
+   add `--region "Ambalangoda"` to narrow matching to one town within the
+   branch:
+
+   ```
+   poetry run leco-add-subscriber someone@example.com Galle --region Ambalangoda "Galle Rd"
+   ```
+
+   The region must match the town name exactly as LECO's site spells it
+   (case-insensitive) — check the current listing at
+   https://www.leco.lk/powerIntrup_e.php for the right spelling. It isn't
+   validated against a fixed list the way branch is, since the set of towns
+   isn't static; a typo just means the subscription matches nothing rather
+   than erroring at add time. Region is optional — without it, matching
+   stays branch-wide, which is fine unless a street name happens to repeat
+   across towns in that branch.
 
 3. Configure SMTP credentials. Copy `.env.example` to `.env` for local runs,
    or set the same variables as GitHub Actions repository secrets
