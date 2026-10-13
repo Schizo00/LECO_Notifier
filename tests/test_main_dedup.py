@@ -26,6 +26,10 @@ def _setup_tmp_store(tmp_path, monkeypatch):
 def test_second_run_same_day_sends_nothing_new(tmp_path, monkeypatch):
     _setup_tmp_store(tmp_path, monkeypatch)
     monkeypatch.setattr(main_module, "fetch_all_areas", lambda: [(1, FIXTURE.read_text())])
+    # Pin "now" inside the fixture's captured date range (September 2026) —
+    # the fixture's outage dates are fixed, so matching against the real
+    # wall clock would start failing once real time moves past them.
+    monkeypatch.setattr(main_module, "local_now", lambda: datetime(2026, 9, 10, 8, 0, 0, tzinfo=LOCAL_TZ))
 
     sent_calls = []
     monkeypatch.setattr(
