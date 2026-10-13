@@ -72,7 +72,7 @@ saying nothing.
   about which streets) and `data/state.json` (which outage+subscriber+stage
   combinations have already been emailed, so nothing is re-sent or repeated
   on the next run).
-- `.github/workflows/check-outages.yml` runs the check every 6 hours via
+- `.github/workflows/check-outages.yml` runs the check everyday via
   GitHub Actions and commits the updated `data/state.json` back to the repo.
 
 ## Setup
