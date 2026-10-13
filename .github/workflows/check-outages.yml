@@ -30,12 +30,13 @@ jobs:
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           FROM_EMAIL: ${{ secrets.FROM_EMAIL }}
+          LECO_ENCRYPTION_KEY: ${{ secrets.LECO_ENCRYPTION_KEY }}
         run: poetry run leco-check
 
       - name: Commit updated state
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/state.json
+          git add data/state.json.enc
           git diff --cached --quiet || git commit -m "Update notification state [skip ci]"
           git push

@@ -68,12 +68,47 @@ saying nothing.
   are due for a given outage as of today.
 - `leco_notifier/mailer.py` emails a subscriber via SMTP when a new
   (outage, stage) pair is due.
-- `leco_notifier/store.py` persists `data/subscribers.json` (who to notify
-  about which streets) and `data/state.json` (which outage+subscriber+stage
-  combinations have already been emailed, so nothing is re-sent or repeated
-  on the next run).
+- `leco_notifier/store.py` persists `data/subscribers.json.enc` (who to
+  notify about which streets) and `data/state.json.enc` (which
+  outage+subscriber+stage combinations have already been emailed, so
+  nothing is re-sent or repeated on the next run) — both encrypted at rest
+  (see Encryption below).
 - `.github/workflows/check-outages.yml` runs the check everyday via
-  GitHub Actions and commits the updated `data/state.json` back to the repo.
+  GitHub Actions and commits the updated `data/state.json.enc` back to the
+  repo.
+
+## Encryption
+
+`data/subscribers.json.enc` and `data/state.json.enc` are both encrypted
+with [Fernet](https://cryptography.io/en/latest/fernet/) symmetric
+encryption (`leco_notifier/crypto.py`), decrypted in memory on load and
+re-encrypted on save — nothing ever touches disk as plaintext. Both files
+needed it: subscribers.json obviously holds real emails, but state.json's
+dedup keys embed them too (`"<hash>:someone@example.com:immediate"`), so
+leaving it plaintext would have defeated the point.
+
+The key is a single `LECO_ENCRYPTION_KEY` env var — generate one with:
+
+```
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+and set it in `.env` for local runs and as a GitHub Actions secret for the
+scheduled workflow, the same way `SMTP_PASS` already is. This is encryption
+at rest, not a security boundary against the process itself — whatever runs
+the notifier must hold the key to decrypt and re-encrypt on every run, so
+the key is exactly as sensitive as the SMTP password. **Losing the key makes
+the encrypted files unrecoverable** (subscribers would need to
+re-subscribe); **leaking it is equivalent to leaking the plaintext**. There
+is no way around this trade-off for a single automated process that both
+reads and writes the same data — back the key up somewhere safe (e.g. a
+password manager) in addition to the GitHub secret.
+
+Because Fernet's ciphertext is non-deterministic (a random IV each time),
+re-encrypting unchanged data still produces a different file every time —
+`main.py` only calls `save_state()` when the `sent` set actually changed,
+so the workflow's "commit only if the file changed" check still means
+something instead of committing a no-op diff every run.
 
 ## Setup
 
@@ -83,15 +118,25 @@ saying nothing.
    poetry install
    ```
 
-2. Add subscribers (repeatable):
+2. Set an encryption key — required before adding subscribers, since the
+   CLI encrypts on write. Generate one and put it in `.env`:
+
+   ```
+   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+   ```
+
+   See [Encryption](#encryption) below for what this key protects and why
+   losing or leaking it matters.
+
+3. Add subscribers (repeatable):
 
    ```
    poetry run leco-add-subscriber someone@example.com Galle "Kandewatta Rd" "Wackwella Rd"
    ```
 
-   This updates `data/subscribers.json`. You can also edit that file by
-   hand — it's a plain JSON list of
-   `{"email": ..., "branch": ..., "region": ..., "streets": [...]}`
+   This updates `data/subscribers.json.enc`, encrypted — there's nothing to
+   hand-edit directly. `data/subscribers.json.example` shows the shape each
+   entry has: `{"email": ..., "branch": ..., "region": ..., "streets": [...]}`
    (`region` is optional). Street names only need to be a substring of what
    LECO publishes (e.g. "Kandewatta" matches "Kandewatta Rd(portion)").
 
@@ -122,10 +167,11 @@ saying nothing.
    stays branch-wide, which is fine unless a street name happens to repeat
    across towns in that branch.
 
-3. Configure SMTP credentials. Copy `.env.example` to `.env` for local runs,
+4. Configure SMTP credentials. Copy `.env.example` to `.env` for local runs,
    or set the same variables as GitHub Actions repository secrets
-   (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `FROM_EMAIL`) for the
-   scheduled workflow. Any standard SMTP+STARTTLS provider works:
+   (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `FROM_EMAIL`,
+   `LECO_ENCRYPTION_KEY`) for the scheduled workflow. Any standard
+   SMTP+STARTTLS provider works:
 
    - **Gmail**: `smtp.gmail.com:587`, with an
      [app password](https://myaccount.google.com/apppasswords) (requires
@@ -136,16 +182,16 @@ saying nothing.
      first — if "App passwords" doesn't appear there, Microsoft has disabled
      basic SMTP auth for that account and Gmail is the more reliable option).
 
-4. Run a check manually:
+5. Run a check manually:
 
    ```
    export $(cat .env | xargs)   # or use a tool like direnv
    poetry run leco-check
    ```
 
-5. Commit `data/subscribers.json` and push. The GitHub Actions workflow runs
-   on its own schedule from there (or trigger it manually from the Actions
-   tab via "Run workflow").
+6. Commit `data/subscribers.json.enc` and push. The GitHub Actions workflow
+   runs on its own schedule from there (or trigger it manually from the
+   Actions tab via "Run workflow").
 
 ## Testing
 
@@ -191,9 +237,9 @@ land exactly 7 or 1 days out:
    ```
 5. Run it a second time with the same `LECO_FAKE_NOW` value — it should
    log/send nothing, confirming that stage won't repeat.
-6. Remove the test subscriber from `data/subscribers.json` and reset
-   `data/state.json` back to `{"sent": []}` before committing, so test data
-   doesn't leak into production state.
+6. Remove the test subscriber from `data/subscribers.json.enc` and reset
+   `data/state.json.enc` back to an encrypted `{"sent": []}` before
+   committing, so test data doesn't leak into production state.
 
 ## Notes
 

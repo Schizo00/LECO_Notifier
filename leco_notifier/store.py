@@ -1,34 +1,37 @@
 import json
 from pathlib import Path
 
+from .crypto import decrypt_bytes, encrypt_bytes
+
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-SUBSCRIBERS_PATH = DATA_DIR / "subscribers.json"
-STATE_PATH = DATA_DIR / "state.json"
+SUBSCRIBERS_PATH = DATA_DIR / "subscribers.json.enc"
+STATE_PATH = DATA_DIR / "state.json.enc"
+
+
+def _load_encrypted_json(path: Path, default):
+    if not path.exists():
+        return default
+    ciphertext = path.read_bytes()
+    return json.loads(decrypt_bytes(ciphertext))
+
+
+def _save_encrypted_json(path: Path, data) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    plaintext = json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
+    path.write_bytes(encrypt_bytes(plaintext))
 
 
 def load_subscribers() -> list:
-    if not SUBSCRIBERS_PATH.exists():
-        return []
-    with SUBSCRIBERS_PATH.open(encoding="utf-8") as f:
-        return json.load(f)
+    return _load_encrypted_json(SUBSCRIBERS_PATH, [])
 
 
 def save_subscribers(subscribers: list) -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    with SUBSCRIBERS_PATH.open("w", encoding="utf-8") as f:
-        json.dump(subscribers, f, indent=2, ensure_ascii=False)
-        f.write("\n")
+    _save_encrypted_json(SUBSCRIBERS_PATH, subscribers)
 
 
 def load_state() -> dict:
-    if not STATE_PATH.exists():
-        return {"sent": []}
-    with STATE_PATH.open(encoding="utf-8") as f:
-        return json.load(f)
+    return _load_encrypted_json(STATE_PATH, {"sent": []})
 
 
 def save_state(state: dict) -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    with STATE_PATH.open("w", encoding="utf-8") as f:
-        json.dump(state, f, indent=2, ensure_ascii=False)
-        f.write("\n")
+    _save_encrypted_json(STATE_PATH, state)

@@ -1,17 +1,17 @@
-import json
-
 from leco_notifier import add_subscriber
 from leco_notifier import store
 
+from helpers import read_encrypted_json, write_encrypted_json
+
 
 def _run(monkeypatch, tmp_path, argv):
-    subscribers_path = tmp_path / "subscribers.json"
+    subscribers_path = tmp_path / "subscribers.json.enc"
     if not subscribers_path.exists():
-        subscribers_path.write_text("[]")
+        write_encrypted_json(subscribers_path, [])
     monkeypatch.setattr(store, "SUBSCRIBERS_PATH", subscribers_path)
     monkeypatch.setattr("sys.argv", ["leco-add-subscriber"] + argv)
     result = add_subscriber.main()
-    return result, json.loads(subscribers_path.read_text())
+    return result, read_encrypted_json(subscribers_path)
 
 
 def test_adds_subscriber_without_region(tmp_path, monkeypatch):

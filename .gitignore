@@ -3,3 +3,7 @@ __pycache__/
 .venv/
 .env
 .DS_Store
+
+# subscriber/state data is committed only in encrypted form (data/*.json.enc)
+data/subscribers.json
+data/state.json

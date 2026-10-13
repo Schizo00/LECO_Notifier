@@ -1,4 +1,3 @@
-import json
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -7,17 +6,19 @@ from zoneinfo import ZoneInfo
 from leco_notifier import main as main_module
 from leco_notifier import store
 
+from helpers import read_encrypted_json, write_encrypted_json
+
 FIXTURE = Path(__file__).parent / "fixtures" / "area1.html"
 LOCAL_TZ = ZoneInfo("Asia/Colombo")
 
 
 def _setup_tmp_store(tmp_path, monkeypatch):
-    subscribers_path = tmp_path / "subscribers.json"
-    state_path = tmp_path / "state.json"
-    subscribers_path.write_text(
-        json.dumps([{"email": "a@example.com", "branch": "Galle", "streets": ["Kandewatta Rd"]}])
+    subscribers_path = tmp_path / "subscribers.json.enc"
+    state_path = tmp_path / "state.json.enc"
+    write_encrypted_json(
+        subscribers_path, [{"email": "a@example.com", "branch": "Galle", "streets": ["Kandewatta Rd"]}]
     )
-    state_path.write_text(json.dumps({"sent": []}))
+    write_encrypted_json(state_path, {"sent": []})
     monkeypatch.setattr(store, "SUBSCRIBERS_PATH", subscribers_path)
     monkeypatch.setattr(store, "STATE_PATH", state_path)
     return subscribers_path, state_path
@@ -86,7 +87,7 @@ def test_immediate_and_coinciding_reminder_collapse_into_one_stage(tmp_path, mon
     assert "New notice" in body
     assert "tomorrow" not in body.lower()
 
-    state = json.loads(state_path.read_text())
+    state = read_encrypted_json(state_path)
     assert f"{outage.id}:a@example.com:immediate" in state["sent"]
     assert f"{outage.id}:a@example.com:1_day_reminder" in state["sent"]  # fulfilled, not re-fireable
 
@@ -101,7 +102,7 @@ def test_missed_run_skips_7day_stage_entirely_not_stale(tmp_path, monkeypatch):
     subscribers_path, state_path = _setup_tmp_store(tmp_path, monkeypatch)
 
     outage_id = "fixed-outage-id"
-    state_path.write_text(json.dumps({"sent": [f"{outage_id}:a@example.com:immediate"]}))
+    write_encrypted_json(state_path, {"sent": [f"{outage_id}:a@example.com:immediate"]})
 
     fixed_now = datetime(2026, 9, 10, 8, 0, 0, tzinfo=LOCAL_TZ)
     outage = SimpleNamespace(
@@ -134,7 +135,7 @@ def test_missed_run_skips_7day_stage_entirely_not_stale(tmp_path, monkeypatch):
     assert "tomorrow" in body.lower()  # the 1-day wording, not the stale 7-day one
     assert "7 days away" not in body
 
-    state = json.loads(state_path.read_text())
+    state = read_encrypted_json(state_path)
     assert f"{outage_id}:a@example.com:1_day_reminder" in state["sent"]
     assert f"{outage_id}:a@example.com:7_day_reminder" not in state["sent"]  # never eligible
 
@@ -156,9 +157,27 @@ def test_total_scrape_failure_aborts_without_sending(tmp_path, monkeypatch):
     assert parse_called == []
 
 
+def test_unchanged_state_does_not_rewrite_the_file(tmp_path, monkeypatch):
+    """Fernet's ciphertext is non-deterministic (random IV per encrypt), so
+    re-saving unchanged state would still produce different bytes every
+    run — main() must skip the write entirely when nothing logically
+    changed, otherwise the workflow's "commit only if changed" check would
+    see a diff on every single run even when nothing new was sent."""
+    _, state_path = _setup_tmp_store(tmp_path, monkeypatch)
+    monkeypatch.setattr(main_module, "fetch_all_areas", lambda: [(1, FIXTURE.read_text())])
+    monkeypatch.setattr(main_module, "local_now", lambda: datetime(2026, 9, 10, 8, 0, 0, tzinfo=LOCAL_TZ))
+    monkeypatch.setattr(main_module, "send_email", lambda to, subject, body: None)
+
+    main_module.main()  # first run: sends and writes state
+    bytes_after_first_run = state_path.read_bytes()
+
+    main_module.main()  # second run same day: nothing new to send
+    assert state_path.read_bytes() == bytes_after_first_run  # file untouched
+
+
 def test_no_subscribers_does_not_fetch(tmp_path, monkeypatch):
     subscribers_path = tmp_path / "subscribers.json"
-    subscribers_path.write_text("[]")
+    write_encrypted_json(subscribers_path, [])
     monkeypatch.setattr(store, "SUBSCRIBERS_PATH", subscribers_path)
 
     called = []

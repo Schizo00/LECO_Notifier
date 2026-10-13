@@ -1,0 +1,18 @@
+[
+  {
+    "email": "someone@example.com",
+    "branch": "Galle",
+    "region": "Ambalangoda",
+    "streets": [
+      "Galle Rd",
+      "Kandewatta Rd"
+    ]
+  },
+  {
+    "email": "someone@example.com",
+    "branch": "Nugegoda",
+    "streets": [
+      "Temple Rd"
+    ]
+  }
+]

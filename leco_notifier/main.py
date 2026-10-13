@@ -94,7 +94,13 @@ def main() -> int:
         except Exception:
             logger.exception("Failed to send email to %s", email)
 
-    save_state({"sent": sorted(new_sent)})
+    if new_sent != sent:
+        # Fernet's ciphertext is non-deterministic (random IV per encrypt),
+        # so re-saving unchanged state would still produce a different file
+        # every run — only write when the sent set actually changed, so the
+        # workflow's "commit only if the file changed" check stays meaningful
+        # instead of committing a no-op diff every single run.
+        save_state({"sent": sorted(new_sent)})
     return 0
 
 
